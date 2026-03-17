@@ -55,35 +55,6 @@ Fuera del alcance de este documento:
 
 ---
 
-### 2.2 Relación entre Entidades
-
-Las entidades del modelo se relacionan de la siguiente manera:
-
-```text
-Application (id_application)
-    └── Sensor (id_sensor)
-            └── Observation
-                    ├── timestamp       (de la cabecera)
-                    ├── property_code   (identifica la ObservedProperty)
-                    └── value           (entero escalado → valor real / factor_escala)
-
-
-## 3. Catálogo de Propiedades Observadas (ObservedProperty)
-
-### 3.1 Estructura de la Tabla de Propiedades
-
-Cada propiedad observada (ObservedProperty) se describe mediante la siguiente estructura estándar:
-
-- **Código**: Identificador numérico único dentro del protocolo.
-- **Nombre**: Nombre canónico de la propiedad (snake_case, sin espacios).
-- **Descripción**: Explicación breve y precisa de lo que se mide.
-- **Dominio**: Categoría temática (ambiental, agua, geo, suelo, etc.).
-- **Unidad**: Unidad física empleada (en sistema SI o derivadas cuando sea posible).
-- **Tipo de dato**: Tipo de dato utilizado en el payload (p. ej. int16,uint16, int32).
-- **Rango esperado**: Rango operativo típico en campo, útil para validación.
-- **Resolución recomendada**: Resolución mínima que se recomienda reportar.
-
-
 ## 3. Catálogo de Propiedades Observadas (ObservedProperty)
 
 ### 3.1 Estructura de la Tabla de Propiedades
@@ -106,8 +77,8 @@ Cada propiedad observada se describe con los siguientes campos:
 
 Los códigos son estáticos y no deben reutilizarse para significados distintos.
 
-> **Codificación**: `valor_wire = round(valor_real × factor_escala)`  
-> **Decodificación**: `valor_real = valor_wire / factor_escala`  
+> **Codificación**: `valor_wire = round(valor_real × factor_escala)`
+> **Decodificación**: `valor_real = valor_wire / factor_escala`
 > `int16` e `int32` admiten negativos. `uint16` solo admite positivos.
 
 | Código | Nombre       | Descripción                                              | Dominio      | Unidad   | Tipo wire | Factor escala | Rango wire           | Resolución |
@@ -158,300 +129,96 @@ Los códigos son estáticos y no deben reutilizarse para significados distintos.
 
 ---
 
-
 ## 4. Identificadores de Entidades
 
-Esta sección define cómo se representan las entidades principales del modelo (Thing, Sensor y FeatureOfInterest) mediante identificadores numéricos en el payload, y cómo se recomienda nombrarlas lógicamente fuera del payload (en configuración, documentación, base de datos).
+Esta sección define cómo se representan las entidades principales del modelo (Application y Sensor) mediante identificadores numéricos en el payload, y cómo se recomienda nombrarlas lógicamente fuera del payload (en configuración, documentación y base de datos).
 
-### 4.1 Identificadores de Thing
+---
 
-Los **Thing** representan nodos, estaciones, boyas, parcelas u otros activos físicos o lógicos a los que se asocian sensores.
+### 4.1 Identificadores de Application
 
-#### 4.1.1 Campo `id_thing` en el payload
+Las **Applications** representan nodos, estaciones, boyas u otros activos físicos o lógicos a los que se asocian sensores.
 
-- **Nombre de campo**: `id_thing`  
-- **Tipo de dato**: `uint16`  
-- **Rango válido**: `1` a `65535`  
-- **Valor reservado**: `0` se reserva para indicar “sin asignar” o mensajes de prueba.
+#### 4.1.1 Campo `id_application` en el payload
+
+- **Nombre de campo**: `id_application`
+- **Tipo de dato**: `uint16`
+- **Rango válido**: `1` a `65535`
+- **Valor reservado**: `0` se reserva para mensajes de prueba o nodos sin asignar.
 
 Este identificador es puramente numérico y debe ser único dentro de la red gestionada por el backend.
 
-#### 4.1.2 Reglas de asignación de `id_thing`
+#### 4.1.2 Reglas de asignación
 
-- La asignación de `id_thing` la realiza el sistema de gestión (backend, servidor de configuración o script de provisión).  
-- Cada Thing activo debe tener un `id_thing` único.  
-- Se recomienda mantener un registro maestro (por ejemplo, en una base de datos o archivo de configuración) que relacione:
-  - `id_thing` → nombre lógico (por ejemplo: `1 → "estacion_central_finca_x"`).  
-- Una vez asignado, el `id_thing` no debe reutilizarse para otro Thing, incluso si el dispositivo original se retira.
+- La asignación de `id_application` la realiza el sistema de gestión (backend o script de provisión), no el nodo.
+- Cada Application activa debe tener un `id_application` único.
+- Una vez asignado, el `id_application` no debe reutilizarse para otra Application, incluso si el dispositivo original se retira.
+- Se debe mantener un registro maestro que relacione:
 
-#### 4.1.3 Nomenclatura lógica de Things (fuera del payload)
+| id_application | Nombre lógico           | Ubicación        | Estado   |
+|----------------|-------------------------|------------------|----------|
+| 1              | estacion_finca_x_lote_a | Finca X, Lote A  | activo   |
+| 2              | boya_lago_principal     | Lago Principal   | activo   |
+| 3              | nodo_aeroponico_01      | Invernadero 1    | retirado |
 
-Además del `id_thing` numérico, se recomienda asignar un identificador lógico legible:
+#### 4.1.3 Nomenclatura lógica (fuera del payload)
 
-- Formato sugerido:  
-  - `site/station_code` (por ejemplo: `finca_x/estacion_01`).  
-- Este nombre NO viaja en el payload binario; se usa en:
-  - Archivos de configuración.  
-  - Consolas web y dashboards.  
-  - Documentación técnica.  
+El nombre lógico de una Application NO viaja en el payload. Se usa en:
 
-La relación entre `id_thing` y el nombre lógico debe mantenerse consistente y versionada.
+- Archivos de configuración del nodo.
+- Consolas web y dashboards.
+- Documentación técnica y registros de campo.
+
+Formato sugerido: `site_code/node_code`
+Ejemplo: `finca_x/estacion_01`, `lago_principal/boya_02`
 
 ---
 
 ### 4.2 Identificadores de Sensor
 
-Los **Sensor** representan los dispositivos o módulos que miden una o más propiedades observadas (ObservedProperty) asociadas a un Thing.
+Los **Sensors** representan los dispositivos o módulos físicos que miden una o más propiedades observadas dentro de una Application.
 
 #### 4.2.1 Campo `id_sensor` en el payload
 
-- **Nombre de campo**: `id_sensor`  
-- **Tipo de dato**: `uint8`  
-- **Rango válido**: `1` a `255`  
-- **Valor reservado**: `0` se reserva para indicar “sin asignar” o uso interno.
+- **Nombre de campo**: `id_sensor`
+- **Tipo de dato**: `uint8`
+- **Rango válido**: `1` a `239`
+- **Rango reservado**: `240` a `255` reservado para sensores virtuales (ver 4.2.3).
+- **Valor reservado**: `0` se reserva para indicar "sin asignar" o uso interno.
 
-El `id_sensor` es único dentro de cada Thing, pero puede repetirse entre Things distintos (por ejemplo, muchos Things pueden tener un `id_sensor = 1` que representa el “módulo ambiental”).
+El `id_sensor` es único dentro de cada Application, pero puede repetirse entre Applications distintas.
 
-#### 4.2.2 Asociación Thing–Sensor
+#### 4.2.2 Asociación Application–Sensor
 
-La combinación `(id_thing, id_sensor)` identifica de forma única un sensor físico o lógico en la red.
+La combinación `(id_application, id_sensor)` identifica de forma única un sensor en la red.
 
-- Ejemplo:  
-  - `(id_thing = 1, id_sensor = 1)` → módulo ambiental de la estación 1.  
-  - `(id_thing = 1, id_sensor = 2)` → módulo de calidad de agua de la estación 1.  
+| id_application | id_sensor | Tipo de sensor         | ObservedProperties              |
+|----------------|-----------|------------------------|---------------------------------|
+| 1              | 1         | Módulo ambiental DHT22 | air_temp, air_hum               |
+| 1              | 2         | Sonda pH Atlas         | water_ph                        |
+| 1              | 3         | Módulo GPS NEO-6M      | lat, lon, alt                   |
+| 2              | 1         | Módulo calidad agua    | water_ph, water_cond, water_do  |
 
+Se recomienda mantener esta tabla de configuración en el backend para relacionar sensores físicos con las propiedades que miden.
 
 #### 4.2.3 Sensores virtuales o agregados
 
-En algunos casos, un “sensor” no es un dispositivo físico único, sino:
+Un sensor virtual es aquel cuyo valor no proviene directamente de hardware, sino de:
 
-- Un cálculo derivado (por ejemplo, índice de confort, índice de estrés hídrico).  
-- Un agregado (por ejemplo, promedio horario de `air_temperature`).
+- Un cálculo derivado (por ejemplo, índice de calor a partir de `air_temp` y `air_hum`).
+- Un agregado (por ejemplo, promedio horario de `air_temp`).
+- Una estimación por modelo (por ejemplo, evapotranspiración).
 
-Para estos casos:
+Reglas para sensores virtuales:
 
-- Se puede reservar un rango específico de `id_sensor` (por ejemplo, 240–255) para sensores virtuales.  
-- En la documentación del sistema se debe indicar claramente:
-  - La fórmula o algoritmo que genera la medición.  
-  - Las propiedades de entrada que utiliza (por ejemplo, `air_temperature`, `relative_humidity`).  
+- Usar `id_sensor` en el rango `240–255`.
+- Documentar explícitamente la fórmula o algoritmo que genera el valor.
+- Indicar las ObservedProperties de entrada que utiliza.
+- Los sensores virtuales pueden generarse en el nodo o exclusivamente en el backend; en ambos casos deben registrarse en la tabla de configuración.
 
-Estos sensores virtuales pueden o no ser enviados en el payload; también pueden generarse solo en el backend, para esto informar a el dev (Juan Carlos / Kevin).
-
----
-
-### 4.3 Identificadores de FeatureOfInterest
-
-El **FeatureOfInterest** representa el objeto del mundo real al que se refiere la medición (por ejemplo, un lago especifico, un pozo, un aeroponico).
-
-El uso explícito de identificadores de FeatureOfInterest en el payload es opcional y depende de la complejidad del despliegue de sensores.
-
-#### 4.3.1 Campo opcional `id_feature_of_interest`
-
-Si se utiliza en el payload:
-
-- **Nombre de campo**: `id_feature_of_interest`  
-- **Tipo de dato**: `uint16`  
-- **Rango válido**: `1` a `65535`  
-- **Valor reservado**: `0` indica que la observación se refiere al propio Thing.
-
-Este campo puede enviarse:
-
-- En la cabecera del mensaje (si todas las mediciones se refieren al mismo FeatureOfInterest).  
-- O dentro de cada bloque de medición (si diferentes mediciones en el mismo mensaje corresponden a FeatureOfInterest distintos).  
-
-#### 4.3.2 Gestión de FeatureOfInterest en el backend
-
-Aunque `id_feature_of_interest` no se use en el payload, en el backend:
-
-- Se tiene tabla en el con:
-  - `id_feature_of_interest`, nombre, descripción, geometría (punto, línea o polígono), metadatos.  
-- Hay relaciones establecidas
-  - `Thing` → FeatureOfInterest por defecto (por ejemplo, el aeroponico donde está instalado).  
-  - Observations → FeatureOfInterest (explícito o derivado).  
-
-Esto facilita análisis espaciales y consultas del tipo:
-- “Dame todas las observaciones de calidad de agua para el lago X en la última semana”.
+| id_sensor | Nombre          | Tipo     | Fórmula / Origen                              |
+|-----------|-----------------|----------|-----------------------------------------------|
+| 240       | heat_index      | derivado | f(air_temp, air_hum) – fórmula Rothfusz       |
+| 241       | air_temp_avg_1h | agregado | promedio de air_temp en ventana de 60 minutos |
 
 ---
-
-
-## 5. Tipos de Datos y Convenciones Binarias
-
-Esta sección define los tipos de datos primitivos admitidos en el payload, la convención de orden de bytes (endianness) y cómo representar valores especiales como errores o datos faltantes.
-
-### 5.1 Tipos Primitivos
-
-El protocolo utiliza un conjunto reducido de tipos para simplificar las implementaciones en microcontroladores y en el backend:
-
-- **uint8**  
-  - Entero sin signo de 8 bits.  
-  - Rango: 0 a 255.  
-  - Uso típico: códigos de propiedad (`property_code`), identificadores de sensor (`id_sensor`), contadores pequeños, flags compactos.
-
-- **uint16**  
-  - Entero sin signo de 16 bits.  
-  - Rango: 0 a 65535.  
-  - Uso típico: identificadores de Thing (`id_thing`), identificadores de FeatureOfInterest (`id_feature_of_interest`), contadores mayores.
-
-- **uint32**  
-  - Entero sin signo de 32 bits.  
-  - Rango: 0 a 4 294 967 295.  
-  - Uso típico: marcas de tiempo (`timestamp` en segundos desde época UNIX), contadores globales.
-
-- **float32 (IEEE 754)**  
-  - Número en coma flotante de 32 bits, estándar IEEE 754.  
-  - Uso típico: valores de medición (`result`), como `air_temperature`, `water_ph`, `air_co2`, etc.  
-
-- **Flags / bitfields (uint8 o uint16)**  
-  - Se utilizan campos enteros en los que cada bit representa un estado booleano.  
-  - Ejemplo (campo `status_flags` de 8 bits):  
-    - bit 0: batería baja  
-    - bit 1: error de sensor  
-    - bit 2: datos saturados  
-    - bits 3–7: reservados para uso futuro  
-
-Los tipos utilizados en cada campo se especifican en las tablas de formato de payload (sección 6).
-
-### 5.2 Endianness
-
-Para garantizar interoperabilidad entre diferentes plataformas (microcontroladores, servidores, lenguajes de programación), el protocolo define un orden de bytes único para todos los campos multibyte.
-
-- **Regla global**: todos los enteros (`uint16`, `uint32`) y `float32` se codifican en **big endian**.  
-- “Big endian” significa que el byte más significativo (MSB) se envía primero en el payload.
-
-Ejemplos:
-
-- Un `uint16` con valor decimal 1 se codifica como: `0x00 0x01`.  
-- Un `uint32` con valor decimal 1 se codifica como: `0x00 0x00 0x00 0x01`.  
-- Un `float32` se codifica según IEEE 754 y se envían sus 4 bytes en orden big endian (MSB primero).
-
-> Nota: Todas las implementaciones de firmware deben codificar uint16, uint32 y float32 usando big endian, independientemente del endianness nativo de la plataforma.
-    El presente estándar incluye funciones de referencia en C/C++ para dicha conversión, que deben usarse o replicarse funcionalmente en todas las implementaciones de nodos.
-
-### 5.3 Representación de Valores Especiales
-
-Para manejar situaciones de datos faltantes, errores de sensor o valores fuera de rango, se adoptan las siguientes convenciones:
-
-- **NaN (Not a Number) en `float32`**  
-  - Cuando una medición no está disponible o resulta inválida después de una validación local, el microcontrolador puede enviar el valor `NaN` en el campo `result` (tipo `float32`).  
-  - El interpreta `NaN` como “sin valor válido” y descartar.
-
-- **Valores fuera de rango**  
-  - Cada propiedad observada tiene un “rango esperado” documentado en la tabla de propiedades (sección 3).  
-  - En el microcontrolador se recomienda:
-    - Limitar los valores a un rango físico razonable (por ejemplo, no enviar temperaturas < -50 °C o > 100 °C).  
-    - Opcionalmente, usar `NaN` cuando la lectura sea claramente inválida (sensor desconectado, error de lectura).  
-  - En el backend:
-    - Se marcan como sospechosos los valores fuera del rango esperado y se descartan.
-
-- **Códigos de error explícitos**  
-  - Cuando se necesite codificar un estado de error específico, se usan campos de flags (`status_flags`).  
-  - `status_flags` (uint8):
-    - bit 0 = 1: batería baja.  
-    - bit 1 = 1: error de sensor en la última lectura.  
-    - bit 2 = 1: valor saturado (límite del sensor).  
-    - bits 3–7: reservados.  
-  - El significado de cada bit está documentado en una tabla específica de la sección 6 o anexos.
-
-- **Valores reservados en enteros**  
-  - En campos identificadores (`id_thing`, `id_sensor`, `id_feature_of_interest`), el valor `0` se reserva para indicar “no asignado” o uso especial y no debe usarse como ID válido.
-
-Estas convenciones deben ser aplicadas tanto en el firmware de los nodos como en la lógica de decodificación y validación en el backend.
-
-
-## 6. Formato de Payload
-
-El mensaje binario enviado por cada nodo se compone de una **cabecera fija** seguida de un **bloque de mediciones** repetido N veces (donde N = `num_measurements`).  
-El objetivo es tener un formato compacto, fácil de codificar en microcontroladores y de decodificar en el backend.
-
-### 6.1 Visión General del Mensaje
-
-Estructura general:
-
-- Cabecera (tamaño fijo).  
-- Bloque de medición 1.  
-- Bloque de medición 2.  
-- …  
-- Bloque de medición N.
-
-En pseudoestructura:
-
-```text
-Header {
-    version          : uint8
-    id_thing         : uint16
-    id_sensor        : uint8
-    timestamp        : uint32
-    num_measurements : uint8
-}
-
-Measurement[i] {
-    property_code    : uint8
-    value            : float32
-}
-
-
-## 7. Ejemplos de Mensajes
-
-### 7.1 Ejemplo 1: Temperatura del Aire
-- Descripción en texto
-- Tabla de campos con valores
-- Representación hexadecimal
-- Interpretación campo por campo
-
-### 7.2 Ejemplo 2: Temperatura del Aire + pH del Agua
-- Descripción en texto
-- Tabla de campos con valores
-- Representación hexadecimal
-- Interpretación campo por campo
-
-### 7.3 Ejemplo 3: Paquete con GPS
-- Descripción en texto
-- Tabla de campos con valores
-- Representación hexadecimal
-- Interpretación campo por campo
-
----
-
-## 8. Reglas de Calidad de Datos
-
-### 8.1 Validación en el Microcontrolador
-- Rangos duros por propiedad
-- Manejo de errores de sensor
-
-### 8.2 Validación en Backend
-- Detección de outliers
-- Comprobaciones de consistencia (ej. salto brusco de pH)
-
-### 8.3 Reglas de Reintento / Retransmisión
-- Opcional: cómo manejar pérdidas de datos
-
----
-
-## 9. Versionado y Compatibilidad
-
-### 9.1 Esquema de Versionado
-- Semántica de versión_protocolo
-- Cambios mayores vs menores
-
-### 9.2 Compatibilidad Hacia Atrás
-- Cómo debe comportarse el backend cuando recibe versiones antiguas
-- Campos reservados
-
-### 9.3 Plan de Migración
-- Cómo introducir nuevas propiedades o cambios sin romper nodos existentes
-
----
-
-## 10. Anexos
-
-### 10.1 Tabla Completa de Códigos de Propiedades
-<!-- Copia completa del catálogo de ObservedProperty -->
-
-### 10.2 Ejemplos de Código
-- Pseudocódigo de codificación en C/C++
-- Pseudocódigo de decodificación en Python/Node
-
-### 10.3 Diagramas
-- Diagrama del flujo de datos (nodo → gateway → nube)
-- Diagrama del modelo conceptual (Thing–Sensor–Observation–ObservedProperty–FeatureOfInterest)
