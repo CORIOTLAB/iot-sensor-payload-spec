@@ -3,39 +3,70 @@
 ## 1. Propósito y Alcance
 
 ### 1.1 Objetivo
-<!-- Describir brevemente qué resuelve el protocolo y en qué contexto se usa -->
+
+Este documento define un protocolo binario ligero para la transmisión estandarizada de datos de sensores IoT desde nodos de campo hacia una plataforma en la nube.
+
+El protocolo establece:
+
+- Un catálogo fijo de variables (ObservedProperty) con nombres, unidades, tipos de dato y factores de escala.
+- Una estructura de mensaje binario (payload) compacta y determinista.
+- Funciones de referencia para codificación en nodos (C/C++) y decodificación en backend (Python).
+
+El objetivo es que cualquier programador que trabaje en el sistema —tanto en firmware como en backend— use exactamente el mismo contrato de datos, sin ambigüedades ni interpretaciones locales.
+
+---
 
 ### 1.2 Alcance
-<!-- Qué tipos de nodos/sensores y redes cubre (LoRaWAN, WiFi, etc.) -->
 
-### 1.3 Audiencia
-<!-- Roles: desarrolladores de firmware, backend, científicos de datos, etc. -->
+El protocolo aplica a:
+
+- **Nodos IoT** basados en microcontroladores de baja potencia (por ejemplo, ESP32, STM32, Arduino, etc.).
+- **Redes de transmisión** con ancho de banda limitado o costoso, incluyendo:
+  - LoRaWAN (principal caso de uso).
+  - WiFi, NB-IoT, Sigfox u otros enlaces LPWAN.
+- **Variables de monitoreo** de los dominios: ambiental, agua, geolocalización, suelo y calidad del aire (ver sección 3).
+- **Plataformas backend** que reciban, decodifiquen y almacenen los mensajes (por ejemplo, TTN, ChirpStack, AWS IoT, Azure IoT Hub, etc.).
+
+Fuera del alcance de este documento:
+
+- Protocolos de red (LoRaWAN, MQTT, etc.); este protocolo define solo el contenido del payload.
+- Lógica de negocio, alertas o modelos de análisis sobre los datos.
+- Configuración remota de nodos (OTA, downlinks).
 
 ---
 
 ## 2. Terminología y Modelo Conceptual
 
 ### 2.1 Definiciones
-- **Thing**
-- **Sensor**
-- **ObservedProperty**
-- **Observation**
-- **FeatureOfInterest**
-- **Payload**
-- **Gateway**
-- **Backend / Plataforma Nube**
 
-### 2.2 Relación entre Entidades
-<!-- Describir brevemente y luego referenciar un diagrama conceptual -->
-- Thing – Sensor – ObservedProperty – Observation – FeatureOfInterest
+- **Application**: Activo físico o lógico que agrupa uno o más sensores bajo una misma identidad en la red (por ejemplo, estación ambiental, boya de calidad de agua, nodo IoT en parcela). Se identifica en el payload mediante `id_application`.
 
-### 2.3 Convenciones Generales
-- Unidades
-- Zona horaria y formato de tiempo
-- Sistema de coordenadas (para geo)
-- Notación de tipos (uint8, float32, etc.)
+- **Sensor**: Dispositivo físico o módulo que realiza mediciones de una o más propiedades observadas (por ejemplo, módulo de temperatura/humedad DHT22, sonda de pH, módulo GPS). Se identifica en el payload mediante `id_sensor`.
+
+- **ObservedProperty**: Propiedad del mundo real que se mide (por ejemplo, `air_temp`, `water_ph`, `lat`). Cada propiedad tiene un código numérico único (`property_code`), unidad, tipo de dato wire y factor de escala definidos en el catálogo (sección 3).
+
+- **Observation**: Medición concreta de una ObservedProperty en un momento dado. Está compuesta por: `property_code`, `value` (entero escalado), y el `timestamp` de la cabecera del mensaje.
+
+- **Payload**: Mensaje binario generado por un nodo siguiendo este protocolo. Contiene una cabecera y uno o más bloques de medición.
+
+- **Gateway**: Dispositivo o servicio que recibe los payloads desde los nodos (por ejemplo, gateway LoRaWAN) y los reenvía al backend sin modificar el contenido binario.
+
+- **Backend / Plataforma nube**: Sistema que recibe los payloads del gateway, los decodifica siguiendo este protocolo y almacena las observaciones resultantes para su análisis y visualización.
 
 ---
+
+### 2.2 Relación entre Entidades
+
+Las entidades del modelo se relacionan de la siguiente manera:
+
+```text
+Application (id_application)
+    └── Sensor (id_sensor)
+            └── Observation
+                    ├── timestamp       (de la cabecera)
+                    ├── property_code   (identifica la ObservedProperty)
+                    └── value           (entero escalado → valor real / factor_escala)
+
 
 ## 3. Catálogo de Propiedades Observadas (ObservedProperty)
 
@@ -48,49 +79,84 @@ Cada propiedad observada (ObservedProperty) se describe mediante la siguiente es
 - **Descripción**: Explicación breve y precisa de lo que se mide.
 - **Dominio**: Categoría temática (ambiental, agua, geo, suelo, etc.).
 - **Unidad**: Unidad física empleada (en sistema SI o derivadas cuando sea posible).
-- **Tipo de dato**: Tipo de dato utilizado en el payload (p. ej. float32, int16).
+- **Tipo de dato**: Tipo de dato utilizado en el payload (p. ej. int16,uint16, int32).
 - **Rango esperado**: Rango operativo típico en campo, útil para validación.
 - **Resolución recomendada**: Resolución mínima que se recomienda reportar.
 
+
+## 3. Catálogo de Propiedades Observadas (ObservedProperty)
+
+### 3.1 Estructura de la Tabla de Propiedades
+
+Cada propiedad observada se describe con los siguientes campos:
+
+- **Código**: Identificador numérico único y estático dentro del protocolo. Es el valor que viaja en el payload como `property_code`.
+- **Nombre**: Nombre canónico en snake_case, en inglés. Es el nombre que se usa en código, base de datos y APIs.
+- **Descripción**: Explicación breve de lo que se mide.
+- **Dominio**: Categoría temática de la propiedad (`ambiental`, `agua`, `geo`, `suelo`, `aire_calidad`).
+- **Unidad**: Unidad física del valor real (después de aplicar el factor de escala en decodificación).
+- **Tipo wire**: Tipo de dato entero usado en el payload binario (`int16`, `uint16`, `int32`).
+- **Factor escala**: Número por el que se multiplica el valor real antes de enviarlo. En decodificación se divide.
+- **Rango wire**: Rango válido del valor ya escalado (el que viaja en el payload).
+- **Resolución**: Granularidad mínima útil del valor real.
+
+---
+
 ### 3.2 Tabla Maestra de Propiedades – Versión 1.0
 
-La siguiente tabla define las propiedades estándar para la versión 1.0 del protocolo.  
-Los códigos son estaticos y no deben reutilizarse para significados distintos.
+Los códigos son estáticos y no deben reutilizarse para significados distintos.
 
-### 3.2 Tabla Maestra de Propiedades – Versión 1.0
+> **Codificación**: `valor_wire = round(valor_real × factor_escala)`  
+> **Decodificación**: `valor_real = valor_wire / factor_escala`  
+> `int16` e `int32` admiten negativos. `uint16` solo admite positivos.
 
-La siguiente tabla define las propiedades estándar para la versión 1.0 del protocolo.  
-Los códigos son estaticos y no deben reutilizarse para significados distintos.
+| Código | Nombre       | Descripción                                              | Dominio      | Unidad   | Tipo wire | Factor escala | Rango wire           | Resolución |
+|--------|--------------|----------------------------------------------------------|--------------|----------|-----------|---------------|----------------------|------------|
+| 10     | air_temp     | Temperatura del aire en el entorno del nodo              | ambiental    | °C       | int16     | 10            | -400 a 600           | 0.1        |
+| 11     | air_hum      | Humedad relativa del aire                                | ambiental    | %        | uint16    | 10            | 0 a 1000             | 0.1        |
+| 12     | air_press    | Presión atmosférica al nivel del sensor                  | ambiental    | hPa      | uint16    | 10            | 8000 a 11000         | 0.1        |
+| 13     | solar_rad    | Radiación solar global incidente sobre el sensor         | ambiental    | W/m²     | uint16    | 1             | 0 a 1500             | 1          |
+| 20     | water_ph     | Potencial de hidrógeno del agua                          | agua         | pH       | uint16    | 100           | 0 a 1400             | 0.01       |
+| 21     | water_turb   | Turbidez del agua                                        | agua         | NTU      | uint16    | 10            | 0 a 40000            | 0.1        |
+| 22     | water_cond   | Conductividad eléctrica del agua                         | agua         | µS/cm    | uint16    | 1             | 0 a 5000             | 1          |
+| 23     | water_do     | Oxígeno disuelto en el agua                              | agua         | mg/L     | uint16    | 100           | 0 a 2000             | 0.01       |
+| 30     | lat          | Latitud geográfica del nodo (WGS84)                      | geo          | grados   | int32     | 100000        | -9000000 a 9000000   | ≈1e-5      |
+| 31     | lon          | Longitud geográfica del nodo (WGS84)                     | geo          | grados   | int32     | 100000        | -18000000 a 18000000 | ≈1e-5      |
+| 32     | alt          | Altitud sobre el nivel medio del mar                     | geo          | m        | int16     | 10            | -1000 a 60000        | 0.1        |
+| 40     | soil_moist   | Humedad volumétrica del suelo en el punto de muestreo    | suelo        | % vol    | uint16    | 10            | 0 a 600              | 0.1        |
+| 41     | soil_temp    | Temperatura del suelo a profundidad de referencia        | suelo        | °C       | int16     | 10            | -100 a 500           | 0.1        |
+| 50     | co2          | Concentración de CO₂ en el aire                          | aire_calidad | ppm      | uint16    | 1             | 400 a 5000           | 1          |
+| 51     | pm25         | Material particulado fino PM2.5                          | aire_calidad | µg/m³    | uint16    | 10            | 0 a 5000             | 0.1        |
+| 52     | pm10         | Material particulado grueso PM10                         | aire_calidad | µg/m³    | uint16    | 10            | 0 a 6000             | 0.1        |
+| 53     | no2          | Concentración de NO₂ en el aire                          | aire_calidad | µg/m³    | uint16    | 10            | 0 a 5000             | 0.1        |
+| 54     | o3           | Concentración de ozono troposférico                      | aire_calidad | µg/m³    | uint16    | 10            | 0 a 3000             | 0.1        |
+| 55     | co           | Concentración de CO en el aire                           | aire_calidad | ppm      | uint16    | 10            | 0 a 3000             | 0.1        |
 
-| Código | Nombre          | Descripción                                                     | Dominio      | Unidad      | Tipo wire | Factor escala | Rango wire           | Resolución |
-|--------|-----------------|-----------------------------------------------------------------|--------------|-------------|-----------|---------------|----------------------|------------|
-| 10     | air_temp        | Temperatura del aire en el entorno inmediato del cultivo       | ambiental    | °C          | int16     | 10            | -400 a 600           | 0.1        |
-| 11     | air_hum         | Humedad relativa del aire                                      | ambiental    | %           | uint16    | 10            | 0 a 1000             | 0.1        |
-| 12     | air_press       | Presión atmosférica al nivel del sensor                        | ambiental    | hPa         | uint16    | 10            | 8000 a 11000         | 0.1        |
-| 13     | solar_rad       | Radiación solar global incidente sobre el sensor               | ambiental    | W/m²        | uint16    | 1             | 0 a 1500             | 1          |
-| 20     | water_ph        | Potencial de hidrógeno del agua                                | agua         | pH          | uint16    | 100           | 0 a 1400             | 0.01       |
-| 21     | water_turb      | Turbidez del agua                                              | agua         | NTU         | uint16    | 10            | 0 a 40000            | 0.1        |
-| 22     | water_cond      | Conductividad eléctrica del agua                               | agua         | µS/cm       | uint16    | 1             | 0 a 5000             | 1          |
-| 23     | water_do        | Oxígeno disuelto en el agua                                    | agua         | mg/L        | uint16    | 100           | 0 a 2000             | 0.01       |
-| 30     | lat             | Latitud geográfica del sensor/nodo                             | geo          | grados      | int32     | 100000        | -9000000 a 9000000   | ≈1e-5      |
-| 31     | lon             | Longitud geográfica del sensor/nodo                            | geo          | grados      | int32     | 100000        | -18000000 a 18000000 | ≈1e-5      |
-| 32     | alt             | Altitud sobre el nivel medio del mar                           | geo          | m           | int16     | 10            | -1000 a 60000        | 0.1        |
-| 40     | soil_moist      | Humedad volumétrica del suelo en el punto de muestreo          | suelo        | % vol       | uint16    | 10            | 0 a 600              | 0.1        |
-| 41     | soil_temp       | Temperatura del suelo a profundidad de referencia              | suelo        | °C          | int16     | 10            | -100 a 500           | 0.1        |
-| 50     | co2             | Concentración de CO₂ en el aire                                | aire_calidad | ppm         | uint16    | 1             | 400 a 5000           | 1          |
-| 51     | pm25            | Material particulado fino PM2.5                                | aire_calidad | µg/m³       | uint16    | 10            | 0 a 5000             | 0.1        |
-| 52     | pm10            | Material particulado grueso PM10                               | aire_calidad | µg/m³       | uint16    | 10            | 0 a 6000             | 0.1        |
-| 53     | no2             | Concentración de NO₂ en el aire                                | aire_calidad | µg/m³       | uint16    | 10            | 0 a 5000             | 0.1        |
-| 54     | o3              | Concentración de ozono troposférico                            | aire_calidad | µg/m³       | uint16    | 10            | 0 a 3000             | 0.1        |
-| 55     | co              | Concentración de CO en el aire                                 | aire_calidad | ppm         | uint16    | 10            | 0 a 3000             | 0.1        |
+> **Nota**: los rangos wire son orientativos. Valores fuera de rango deben tratarse como inválidos en el backend (ver sección 5.3).
 
-> **Nota de codificación**: `valor_wire = round(valor_real × factor_escala)`.  
-> **Nota de decodificación**: `valor_real = valor_wire / factor_escala`.  
-> **Nota de tipos**: `int16` y `int32` admiten negativos; `uint16` solo positivos.
+---
 
+### 3.3 Reglas para la Evolución del Catálogo
 
-> Nota: los rangos esperados son orientativos y pueden ajustarse según el contexto agroclimático y normativas de calidad de aire.  
-> La resolución recomendada indica la granularidad mínima útil; el hardware puede tener resolución interna distinta.
+1. **Añadir nuevas propiedades**
+   - Asignar un código numérico no usado previamente.
+   - El nombre debe ser único, en snake_case y en inglés.
+   - Completar todos los campos de la tabla (descripción, dominio, unidad, tipo wire, factor escala, rango wire, resolución).
+   - Incrementar la versión menor del protocolo (por ejemplo, v1.0 → v1.1).
+
+2. **No reutilización de códigos**
+   - Un código retirado no puede asignarse a otra propiedad.
+   - Las propiedades retiradas se marcan como `DEPRECATED desde vX.Y` y permanecen en el anexo histórico.
+
+3. **No modificar propiedades existentes**
+   - No se puede cambiar el tipo wire, factor escala ni unidad de una propiedad ya publicada.
+   - Si se requiere un cambio de ese tipo, se crea una nueva propiedad con nuevo código y se depreca la anterior.
+
+4. **Control de versiones**
+   - Toda modificación del catálogo incrementa al menos la versión menor del protocolo.
+   - El campo `version` en la cabecera del payload indica qué versión del catálogo entiende el nodo.
+
+---
 
 
 ## 4. Identificadores de Entidades
